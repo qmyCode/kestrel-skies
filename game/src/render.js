@@ -162,7 +162,7 @@ export function drawClouds(ctx, camera, canvasWidth, canvasHeight, time) {
     const proj = cloud.proj;
     const size = cloud.size * proj.scale;
 
-    const alpha = cloud.opacity * (1 - Math.min(1, proj.z / 15000));
+    const alpha = cloud.opacity * 0.6 * (1 - Math.min(1, proj.z / 15000));
     if (alpha <= 0) continue;
 
     ctx.globalAlpha = alpha;
@@ -170,11 +170,17 @@ export function drawClouds(ctx, camera, canvasWidth, canvasHeight, time) {
     ctx.beginPath();
     ctx.ellipse(proj.x, proj.y, size * 1.5, size * 0.7, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(proj.x - size * 0.5, proj.y + size * 0.12, size * 0.9, size * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(proj.x + size * 0.55, proj.y + size * 0.1, size * 0.8, size * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.globalAlpha = alpha * 0.3;
+    ctx.globalAlpha = alpha * 0.35;
     ctx.fillStyle = COLOURS.cloudShadow;
     ctx.beginPath();
-    ctx.ellipse(proj.x + size * 0.1, proj.y + size * 0.1, size * 1.3, size * 0.6, 0, 0, Math.PI * 2);
+    ctx.ellipse(proj.x + size * 0.1, proj.y + size * 0.22, size * 1.3, size * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -186,6 +192,7 @@ export function drawTerrain(ctx, camera, canvasWidth, canvasHeight, terrain, ter
   // horizonY parameter kept for compatibility (no longer used for culling)
 
   for (const poly of terrainPolys) {
+    if (poly.height < 0) continue; // underwater: the sea surface covers it
     const proj = projectPoint(camera, {
       x: poly.x,
       y: poly.y,
@@ -207,7 +214,7 @@ export function drawTerrain(ctx, camera, canvasWidth, canvasHeight, terrain, ter
     const g = (packed >> 8) & 0xFF;
     const b = packed & 0xFF;
     const baseColour = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    const shadedColour = shadeColour(baseColour, 0.6 + altitudeRatio * 0.5);
+    const shadedColour = shadeColour(baseColour, 0.85 + altitudeRatio * 0.3);
 
     // Distance fog
     const fogFactor = Math.min(1, proj.z / 10000);
@@ -465,31 +472,6 @@ export function drawPlaneModel(ctx, camera, canvasWidth, canvasHeight, state) {
   ctx.stroke();
   ctx.restore();
 
-  // === VERTICAL FIN (rises from the tail, drawn behind fuselage top edge) ===
-  // Fin is at the tail (bottom); it projects as a centre strip running up
-  // the rear fuselage. Draw it first so the fuselage overlaps its base.
-  const finGrad = ctx.createLinearGradient(0, tailY - 58, 0, tailY + 8);
-  finGrad.addColorStop(0, ORANGE_LIGHT);
-  finGrad.addColorStop(1, ORANGE_DARK);
-  ctx.fillStyle = finGrad;
-  ctx.beginPath();
-  ctx.moveTo(cx - 7, tailY + 8);
-  ctx.lineTo(cx - 10, tailY - 34);
-  ctx.quadraticCurveTo(cx - 9, tailY - 56, cx, tailY - 58);
-  ctx.quadraticCurveTo(cx + 9, tailY - 56, cx + 10, tailY - 34);
-  ctx.lineTo(cx + 7, tailY + 8);
-  ctx.closePath();
-  ctx.fill();
-  outline(); ctx.stroke();
-  // Fin stripes (cream)
-  ctx.strokeStyle = CREAM;
-  ctx.lineWidth = 3;
-  for (const t of [0.3, 0.52, 0.74]) {
-    const y = tailY + 8 - 66 * t;
-    const w = 9 - 2 * t;
-    ctx.beginPath(); ctx.moveTo(cx - w, y); ctx.lineTo(cx + w, y); ctx.stroke();
-  }
-
   // === MAIN WING ===
   const wSpan = 340, wRootHalf = 30;
   const wingGrad = ctx.createLinearGradient(cx - wSpan / 2, 0, cx + wSpan / 2, 0);
@@ -554,6 +536,31 @@ export function drawPlaneModel(ctx, camera, canvasWidth, canvasHeight, state) {
   ctx.ellipse(cx, canY, 16, 21, 0, 0, Math.PI * 2);
   ctx.fill();
   outline(); ctx.stroke();
+
+  // === VERTICAL FIN (rises from the tail cone, drawn over the fuselage so its stripes read) ===
+  // Fin is at the tail (bottom); it projects as a centre strip running up
+  // the rear fuselage. Draw it first so the fuselage overlaps its base.
+  const finGrad = ctx.createLinearGradient(0, tailY - 58, 0, tailY + 8);
+  finGrad.addColorStop(0, ORANGE_LIGHT);
+  finGrad.addColorStop(1, ORANGE_DARK);
+  ctx.fillStyle = finGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, tailY + 8);
+  ctx.lineTo(cx - 10, tailY - 34);
+  ctx.quadraticCurveTo(cx - 9, tailY - 56, cx, tailY - 58);
+  ctx.quadraticCurveTo(cx + 9, tailY - 56, cx + 10, tailY - 34);
+  ctx.lineTo(cx + 7, tailY + 8);
+  ctx.closePath();
+  ctx.fill();
+  outline(); ctx.stroke();
+  // Fin stripes (cream)
+  ctx.strokeStyle = CREAM;
+  ctx.lineWidth = 3;
+  for (const t of [0.3, 0.52, 0.74]) {
+    const y = tailY + 8 - 66 * t;
+    const w = 9 - 2 * t;
+    ctx.beginPath(); ctx.moveTo(cx - w, y); ctx.lineTo(cx + w, y); ctx.stroke();
+  }
 
   // === TAILPLANE (small horizontal stabiliser at the tail, nearest viewer) ===
   const tpSpan = 132;
@@ -635,10 +642,10 @@ export function renderFrame(ctx, state, terrain, terrainPolys, rings, mission, c
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   // Sky - returns horizonY
-  const horizonY = drawSky(ctx, camera, canvasWidth, canvasHeight, 0.3);
+  const horizonY = drawSky(ctx, camera, canvasWidth, canvasHeight, 0.18);
 
   // Sun
-  drawSun(ctx, camera, canvasWidth, canvasHeight, 0.3);
+  drawSun(ctx, camera, canvasWidth, canvasHeight, 0.18);
 
   // Clouds
   drawClouds(ctx, camera, canvasWidth, canvasHeight, time);

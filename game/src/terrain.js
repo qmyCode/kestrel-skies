@@ -294,20 +294,21 @@ function getTerrainColour(x, y, height, islands) {
       let baseColour = bestIsland.colour;
       if (bestIsland.type === 'volcano' && altitudeRatio > 0.7) {
         baseColour = COLOURS.lava;
-      } else if (altitudeRatio > 0.8) {
+      } else if (altitudeRatio > 0.88) {
         baseColour = COLOURS.rock;
-      } else if (altitudeRatio > 0.5) {
+      } else if (altitudeRatio > 0.55) {
         baseColour = COLOURS.forest;
       }
-      return shadeColour(baseColour, 0.7 + altitudeRatio * 0.5);
+      return shadeColour(baseColour, 0.85 + altitudeRatio * 0.3);
     } else if (radiusRatio < 1.1) {
       // Beach
       return shadeColour(COLOURS.sand, 0.8 + Math.random() * 0.2);
     }
   }
 
-  // Default sea
-  return COLOURS.seaDeep;
+  // Default: above-water specks far from any island read as shallows,
+  // not as a dark strip across the waterline
+  return COLOURS.seaShallow;
 }
 
 /** Pack colour hex to Uint32 RGBA */

@@ -25,20 +25,20 @@ export const PLANE = {
 // Colours (hex strings for Canvas)
 export const COLOURS = {
   // Sky gradients (day)
-  skyZenith: '#002244',
-  skyHorizon: '#4488bb',
-  skyGoldenZenith: '#151a30',
-  skyGoldenHorizon: '#dd6622',
+  skyZenith: '#2e6db0',
+  skyHorizon: '#a8d4f0',
+  skyGoldenZenith: '#2a3a5e',
+  skyGoldenHorizon: '#ff9a4d',
   // Sea
-  seaDeep: '#001a33',
-  seaShallow: '#004477',
+  seaDeep: '#0a3a5e',
+  seaShallow: '#2a7ab0',
   seaFoam: '#aaddff',
   // Terrain
   sand: '#e8d4b9',
-  grassLight: '#4a7c2e',
-  grassDark: '#2d5a1a',
-  forest: '#1a4a12',
-  rock: '#555555',
+  grassLight: '#5c9440',
+  grassDark: '#3a6e24',
+  forest: '#2a5e1c',
+  rock: '#7a756c',
   volcanoRock: '#3a2a2a',
   lava: '#ff4400',
   // Runway
@@ -64,8 +64,8 @@ export const COLOURS = {
   tail: '#992222',
   propBlur: '#444444',
   // Clouds
-  cloudLight: '#e8e8f0',
-  cloudShadow: '#b8b8d0',
+  cloudLight: '#ffffff',
+  cloudShadow: '#d5dde8',
   // Sun
   sunCore: '#ffff88',
   sunGlow: '#ffaa00',

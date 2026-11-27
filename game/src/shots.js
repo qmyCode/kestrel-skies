@@ -142,14 +142,15 @@ function setupChase(terrain, rings, seed) {
   state.fuel = PLANE.fuelCapacity * 0.8;
   state.throttle = 0.65;
 
-  // Over main island, offset toward ring 1
+  // On the ring-1 line, ~320m short of the ring, so the ring frames the
+  // plane from the chase camera and the backdrop is the island interior
   const ringAngle = Math.atan2(ring1.y - mainIsland.y, ring1.x - mainIsland.x);
-  state.x = mainIsland.x + Math.cos(ringAngle) * 300;
-  state.y = mainIsland.y + Math.sin(ringAngle) * 300;
-  state.altitude = 220;
-  state.heading = ringAngle;
+  state.x = mainIsland.x + Math.cos(ringAngle) * 620;
+  state.y = mainIsland.y + Math.sin(ringAngle) * 620;
+  state.altitude = 195;
+  state.heading = ringAngle; // outward, straight at ring 1 (~320m ahead)
   state.speed = 50;
-  state.pitch = -0.35; // gives chase camera pitch ~ -0.1 (looking down at plane)
+  state.pitch = -0.25; // gives chase camera pitch ~ -0.08 (looking down at plane)
   state.roll = -0.15; // slight bank for visual interest
 
   // Settle

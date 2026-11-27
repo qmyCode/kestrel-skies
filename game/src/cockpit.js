@@ -147,6 +147,7 @@ export function drawAltimeter(ctx, x, y, radius, altitude) {
   ctx.textBaseline = 'middle';
 
   for (let i = -3; i <= 3; i++) {
+    if (i % 2 !== 0) continue; // label every other tick: 7 labels crowd a small gauge
     const alt = centerAlt + i * 150;
     if (alt < 0) continue;
     const angle = i * 30 * Math.PI / 180;
@@ -229,6 +230,7 @@ export function drawAirspeed(ctx, x, y, radius, airspeed, stallSpeed, maxSpeed) 
   ctx.textBaseline = 'middle';
 
   for (let i = 0; i <= 6; i++) {
+    if (i % 2 !== 0) continue; // label every other tick only
     const spd = i * 20;
     if (spd > maxSpeed + 10) continue;
     const angle = -Math.PI / 2 + i * 30 * Math.PI / 180;
