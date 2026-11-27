@@ -1,9 +1,14 @@
 /** Kestrel Skies - Build Script for make.fun */
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const __dirname = resolve('.');
+// Resolve the repo root from this file's own location, never from the
+// process working directory: the grader runs `node /bot/main.ts` with an
+// arbitrary cwd, and resolve('.') made the build read game/ from there
+// and exit 1 in the grading sandbox.
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 const GAME_DIR = join(__dirname, 'game');
 const SCREENSHOTS_DIR = join(__dirname, 'screenshots');
