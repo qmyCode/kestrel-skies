@@ -181,15 +181,23 @@ function setupApproach(terrain, rings, seed) {
   state.gearDown = true;
   state.flaps = 1.0;
 
-  // On final approach, aligned with runway centerline - 1000m out for large runway
+  // On final approach, aligned with runway centerline.
+  // The runway is drawn at z~0 on a 180m island, so a low approach sees
+  // the strip projected onto the sea in front of the island. Stage a
+  // steep, high final instead: 350m short of the threshold at 170m,
+  // pitched down at the strip, so the runway lies large on the island
+  // slope in the centre of the frame. (700m+ out at 60-70m - the first
+  // staging tried - makes the 30m-wide strip only ~40px across and
+  // puts it on the water.)
   state.heading = runway.heading;
-  const dist = 1000; // 1km out - runway will be large
+  const distFromThreshold = 350;
+  const dist = runway.length / 2 + distFromThreshold; // from runway centre
   // Runway centerline: (runway.x, runway.y) + t * (cos, sin), t negative for approach
   state.x = runway.x - Math.cos(runway.heading) * dist;
   state.y = runway.y - Math.sin(runway.heading) * dist;
-  state.altitude = 70; // ~230ft AGL
+  state.altitude = 170;
   state.speed = 32; // Approach speed
-  state.pitch = -0.08; // 3 degree glideslope
+  state.pitch = -0.28; // steep descent onto the strip
 
   // Settle
   for (let i = 0; i < 10; i++) {

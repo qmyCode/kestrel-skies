@@ -16,39 +16,35 @@ export function projectPoint(camera, point, canvasWidth, canvasHeight) {
   const dy = point.y - camera.y;
   const dz = point.z - camera.z; // z = altitude
 
-  // Rotate by camera heading (yaw)
-  const cosH = Math.cos(-camera.heading);
-  const sinH = Math.sin(-camera.heading);
-  const rx = dx * cosH - dy * sinH;
-  const ry = dx * sinH + dy * cosH;
+  // Yaw: decompose into forward (along heading) and right (lateral)
+  // Forward unit = (cosH, sinH); right unit = (sinH, -cosH)
+  const cosH = Math.cos(camera.heading);
+  const sinH = Math.sin(camera.heading);
+  const forward = dx * cosH + dy * sinH;
+  const right = dx * sinH - dy * cosH;
 
-  // Rotate by camera pitch
-  const cosP = Math.cos(-camera.pitch);
-  const sinP = Math.sin(-camera.pitch);
-  const rz = ry * cosP - dz * sinP;
-  const ry2 = ry * sinP + dz * cosP;
+  // Pitch: rotate forward/up. camera.pitch is the elevation of the view
+  // direction (negative pitch = looking down, as used by the shot scenes).
+  const cosP = Math.cos(camera.pitch);
+  const sinP = Math.sin(camera.pitch);
+  const depth = forward * cosP + dz * sinP;
+  const up = -forward * sinP + dz * cosP;
 
-  // Roll rotation (around forward axis)
-  const cosR = Math.cos(-camera.roll);
-  const sinR = Math.sin(-camera.roll);
-  const fx = rx * cosR - rz * sinR;
-  const fz = rx * sinR + rz * cosR;
+  // Roll: rotate right/up in the screen plane
+  const cosR = Math.cos(camera.roll);
+  const sinR = Math.sin(camera.roll);
+  const xr = right * cosR - up * sinR;
+  const yr = right * sinR + up * cosR;
 
-  // Perspective projection
-  // Use max(fz, nearPlane) for depth to avoid culling terrain directly below/behind
-  // (when camera looks horizontally or down, terrain below can have fz <= 0)
-  const depth = Math.max(fz, RENDER.nearPlane);
+  // Perspective projection. Points at/behind the near plane keep their raw
+  // (<= near) depth so callers can cull them via proj.z / proj.rawDepth.
+  const focal = (canvasHeight / 2) / Math.tan(RENDER.fov / 2);
+  const safeDepth = Math.max(depth, RENDER.nearPlane);
+  const scale = focal / safeDepth;
+  const sx = canvasWidth / 2 + xr * scale;
+  const sy = canvasHeight / 2 - yr * scale;
 
-  const scale = (canvasHeight / 2) / Math.tan(RENDER.fov / 2) / depth;
-  const sx = canvasWidth / 2 + fx * scale;
-
-  // Compute horizon Y from camera pitch: horizon shifts down as pitch increases (nose up)
-  // Horizon at screen center (0.5) when pitch=0. Each radian of pitch moves horizon by FOV.
-  const horizonFactor = 0.5 - camera.pitch / RENDER.fov;
-  const sy = canvasHeight * horizonFactor - ry2 * scale;
-
-  // Return clamped depth for culling, but valid screen position even for fz <= 0
-  return { x: sx, y: sy, z: depth, scale, rawDepth: fz };
+  return { x: sx, y: sy, z: depth, scale, rawDepth: depth };
 }
 
 /** Camera state for rendering */
@@ -87,9 +83,10 @@ export function createCamera(state, mode = CameraMode.COCKPIT) {
 
 /** Sky gradient - returns horizonY for other functions */
 export function drawSky(ctx, camera, canvasWidth, canvasHeight, timeOfDay = 0.5) {
-  // Horizon Y computed from camera pitch
-  const horizonFactor = 0.5 - camera.pitch / RENDER.fov;
-  const horizonY = canvasHeight * Math.max(0.1, Math.min(0.9, horizonFactor));
+  // Horizon Y consistent with projectPoint: a distant point at camera
+  // altitude projects to cy + focal * sin(pitch).
+  const focal = (canvasHeight / 2) / Math.tan(RENDER.fov / 2);
+  const horizonY = Math.max(0, Math.min(canvasHeight, canvasHeight / 2 + focal * Math.sin(camera.pitch)));
 
   const gradient = ctx.createLinearGradient(0, 0, 0, horizonY);
 
@@ -420,107 +417,165 @@ export function drawRings(ctx, camera, canvasWidth, canvasHeight, rings, time) {
   }
 }
 
-/** Draw plane model (chase view) */
+/** Draw Kestrel K-7 aircraft in chase view - screen-space rear three-quarter illustration.
+ *  Chase camera sits behind and above the plane, so the fuselage length projects
+ *  vertically on screen: tail at the bottom (near viewer), nose at the top (far).
+ *  Drawn as single smooth shapes - no stacked slices. */
 export function drawPlaneModel(ctx, camera, canvasWidth, canvasHeight, state) {
-  const planeLength = 8;
-  const wingSpan = 10;
-  const tailHeight = 2.5;
+  if (!state.engineRunning) return;
 
-  // Local vertices (plane coordinates: x=forward, y=right, z=up)
-  const vertices = [
-    // Fuselage
-    { x: planeLength, y: 0, z: 0 },           // Nose
-    { x: -planeLength * 0.7, y: 0, z: 0 },    // Tail base
-    // Wings
-    { x: -planeLength * 0.15, y: -wingSpan, z: 0 }, // Left tip
-    { x: -planeLength * 0.15, y: wingSpan, z: 0 },  // Right tip
-    // Tail fin
-    { x: -planeLength * 0.65, y: 0, z: tailHeight },
-    // Propeller (blur disk)
-    { x: planeLength * 1.15, y: 0, z: 0 },
-  ];
+  ctx.save();
 
-  // Transform to world
-  const cosH = Math.cos(state.heading);
-  const sinH = Math.sin(state.heading);
-  const cosP = Math.cos(state.pitch);
-  const sinP = Math.sin(state.pitch);
-  const cosR = Math.cos(state.roll);
-  const sinR = Math.sin(state.roll);
+  const cx = canvasWidth * 0.5;
+  const cy = canvasHeight * 0.62;
+  const pitchOffset = state.pitch * 60;
 
-  const worldVerts = vertices.map(v => {
-    // Roll
-    let x = v.x;
-    let y = v.y * cosR - v.z * sinR;
-    let z = v.y * sinR + v.z * cosR;
-    // Pitch
-    const y2 = y;
-    y = y2 * cosP - z * sinP;
-    z = y2 * sinP + z * cosP;
-    // Heading
-    const x2 = x;
-    x = x2 * cosH - y * sinH;
-    y = x2 * sinH + y * cosH;
-    // Translate
-    return { x: x + state.x, y: y + state.y, z: z + state.altitude };
-  });
+  // Bank the whole drawing by the plane's roll
+  ctx.translate(cx, cy + pitchOffset);
+  ctx.rotate(state.roll * 0.9);
+  ctx.translate(-cx, -(cy + pitchOffset));
+  ctx.translate(0, pitchOffset);
 
-  // Project all vertices
-  const projVerts = worldVerts.map(v => projectPoint(camera, v, canvasWidth, canvasHeight)).filter(p => p && p.z > 0);
+  const ORANGE = '#E86C00';
+  const ORANGE_DARK = '#B84C00';
+  const ORANGE_LIGHT = '#FF8C20';
+  const CREAM = '#F5E8D0';
+  const GLASS_DARK = '#14142a';
+  const GLASS_LIGHT = '#4a5a8a';
+  const OUTLINE = 'rgba(20,10,0,0.45)';
+  const outline = () => { ctx.strokeStyle = OUTLINE; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; };
 
-  if (projVerts.length < 4) return;
+  // Key vertical stations (relative to cy)
+  const noseY = cy - 88;      // far end
+  const wingY = cy + 6;       // main wing line
+  const tailY = cy + 62;      // near end (tail cone)
 
-  // Draw fuselage
-  const nose = projVerts[0];
-  const tail = projVerts[1];
-  if (nose && tail) {
-    ctx.strokeStyle = COLOURS.fuselage;
-    ctx.lineWidth = Math.max(3, 5 * nose.scale);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(nose.x, nose.y);
-    ctx.lineTo(tail.x, tail.y);
-    ctx.stroke();
+  // === PROPELLER DISC (at the nose, far end - small translucent disc) ===
+  ctx.save();
+  ctx.fillStyle = 'rgba(50,50,60,0.28)';
+  ctx.beginPath();
+  ctx.arc(cx, noseY - 4, 30, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,40,50,0.35)';
+  ctx.lineWidth = 2;
+  const ba = (performance.now() / 40) % Math.PI;
+  ctx.beginPath();
+  ctx.moveTo(cx - Math.cos(ba) * 28, noseY - 4 - Math.sin(ba) * 28);
+  ctx.lineTo(cx + Math.cos(ba) * 28, noseY - 4 + Math.sin(ba) * 28);
+  ctx.stroke();
+  ctx.restore();
+
+  // === VERTICAL FIN (rises from the tail, drawn behind fuselage top edge) ===
+  // Fin is at the tail (bottom); it projects as a centre strip running up
+  // the rear fuselage. Draw it first so the fuselage overlaps its base.
+  const finGrad = ctx.createLinearGradient(0, tailY - 58, 0, tailY + 8);
+  finGrad.addColorStop(0, ORANGE_LIGHT);
+  finGrad.addColorStop(1, ORANGE_DARK);
+  ctx.fillStyle = finGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - 7, tailY + 8);
+  ctx.lineTo(cx - 10, tailY - 34);
+  ctx.quadraticCurveTo(cx - 9, tailY - 56, cx, tailY - 58);
+  ctx.quadraticCurveTo(cx + 9, tailY - 56, cx + 10, tailY - 34);
+  ctx.lineTo(cx + 7, tailY + 8);
+  ctx.closePath();
+  ctx.fill();
+  outline(); ctx.stroke();
+  // Fin stripes (cream)
+  ctx.strokeStyle = CREAM;
+  ctx.lineWidth = 3;
+  for (const t of [0.3, 0.52, 0.74]) {
+    const y = tailY + 8 - 66 * t;
+    const w = 9 - 2 * t;
+    ctx.beginPath(); ctx.moveTo(cx - w, y); ctx.lineTo(cx + w, y); ctx.stroke();
   }
 
-  // Draw wings
-  const leftTip = projVerts[2];
-  const rightTip = projVerts[3];
-  if (leftTip && rightTip) {
-    ctx.strokeStyle = COLOURS.wing;
-    ctx.lineWidth = Math.max(3, 4 * leftTip.scale);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(leftTip.x, leftTip.y);
-    ctx.lineTo(rightTip.x, rightTip.y);
-    ctx.stroke();
-  }
+  // === MAIN WING ===
+  const wSpan = 340, wRootHalf = 30;
+  const wingGrad = ctx.createLinearGradient(cx - wSpan / 2, 0, cx + wSpan / 2, 0);
+  wingGrad.addColorStop(0, ORANGE_DARK);
+  wingGrad.addColorStop(0.5, ORANGE);
+  wingGrad.addColorStop(1, ORANGE_DARK);
+  ctx.fillStyle = wingGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - wSpan / 2, wingY - 12);
+  ctx.lineTo(cx - wRootHalf, wingY - 6);
+  ctx.lineTo(cx + wRootHalf, wingY - 6);
+  ctx.lineTo(cx + wSpan / 2, wingY - 12);
+  ctx.lineTo(cx + wSpan / 2 - 16, wingY + 14);
+  ctx.lineTo(cx - wSpan / 2 + 16, wingY + 14);
+  ctx.closePath();
+  ctx.fill();
+  outline(); ctx.stroke();
+  // Cream trailing edge strip
+  ctx.strokeStyle = CREAM;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - wSpan / 2 + 18, wingY + 11);
+  ctx.lineTo(cx + wSpan / 2 - 18, wingY + 11);
+  ctx.stroke();
 
-  // Draw tail fin
-  const tailFin = projVerts[4];
-  if (tail && tailFin) {
-    ctx.strokeStyle = COLOURS.tail;
-    ctx.lineWidth = Math.max(2, 3 * tail.scale);
-    ctx.beginPath();
-    ctx.moveTo(tail.x, tail.y);
-    ctx.lineTo(tailFin.x, tailFin.y);
-    ctx.stroke();
-  }
+  // === FUSELAGE (one smooth tapered body, tail bottom -> nose top) ===
+  const fuseGrad = ctx.createLinearGradient(0, tailY, 0, noseY);
+  fuseGrad.addColorStop(0, ORANGE_DARK);
+  fuseGrad.addColorStop(0.45, ORANGE);
+  fuseGrad.addColorStop(0.8, ORANGE_LIGHT);
+  fuseGrad.addColorStop(1, CREAM);
+  ctx.fillStyle = fuseGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx, noseY - 6);
+  ctx.bezierCurveTo(cx + 17, noseY + 4, cx + 26, wingY - 34, cx + 30, wingY + 2);
+  ctx.bezierCurveTo(cx + 32, wingY + 26, cx + 20, tailY - 8, cx + 11, tailY + 8);
+  ctx.quadraticCurveTo(cx, tailY + 14, cx - 11, tailY + 8);
+  ctx.bezierCurveTo(cx - 20, tailY - 8, cx - 32, wingY + 26, cx - 30, wingY + 2);
+  ctx.bezierCurveTo(cx - 26, wingY - 34, cx - 17, noseY + 4, cx, noseY - 6);
+  ctx.closePath();
+  ctx.fill();
+  outline(); ctx.stroke();
+  // Cream cheatline along the fuselage side
+  ctx.strokeStyle = 'rgba(245,232,208,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 24, wingY + 16);
+  ctx.quadraticCurveTo(cx - 26, wingY - 14, cx - 15, noseY + 16);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + 24, wingY + 16);
+  ctx.quadraticCurveTo(cx + 26, wingY - 14, cx + 15, noseY + 16);
+  ctx.stroke();
 
-  // Propeller blur
-  const prop = projVerts[5];
-  if (prop && state.engineRunning && state.throttle > 0.1) {
-    const propRadius = 18 * prop.scale * (0.5 + state.throttle * 0.5);
-    const grad = ctx.createRadialGradient(prop.x, prop.y, 0, prop.x, prop.y, propRadius);
-    grad.addColorStop(0, 'rgba(40,40,40,0.5)');
-    grad.addColorStop(0.5, 'rgba(80,80,80,0.2)');
-    grad.addColorStop(1, 'rgba(68,68,68,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(prop.x, prop.y, propRadius, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // === CANOPY (dark glass, on top of fuselage ahead of the wing) ===
+  const canY = noseY + 34;
+  const canGrad = ctx.createRadialGradient(cx - 5, canY - 7, 2, cx, canY, 22);
+  canGrad.addColorStop(0, GLASS_LIGHT);
+  canGrad.addColorStop(1, GLASS_DARK);
+  ctx.fillStyle = canGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, canY, 16, 21, 0, 0, Math.PI * 2);
+  ctx.fill();
+  outline(); ctx.stroke();
+
+  // === TAILPLANE (small horizontal stabiliser at the tail, nearest viewer) ===
+  const tpSpan = 132;
+  const tpGrad = ctx.createLinearGradient(cx - tpSpan / 2, 0, cx + tpSpan / 2, 0);
+  tpGrad.addColorStop(0, ORANGE_DARK);
+  tpGrad.addColorStop(0.5, ORANGE_LIGHT);
+  tpGrad.addColorStop(1, ORANGE_DARK);
+  ctx.fillStyle = tpGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - tpSpan / 2, tailY + 2);
+  ctx.lineTo(cx - 14, tailY - 4);
+  ctx.lineTo(cx + 14, tailY - 4);
+  ctx.lineTo(cx + tpSpan / 2, tailY + 2);
+  ctx.lineTo(cx + tpSpan / 2 - 12, tailY + 16);
+  ctx.lineTo(cx - tpSpan / 2 + 12, tailY + 16);
+  ctx.closePath();
+  ctx.fill();
+  outline(); ctx.stroke();
+
+  ctx.restore();
 }
+
 
 /** Draw villages */
 export function drawVillages(ctx, camera, canvasWidth, canvasHeight, villages, terrain) {
