@@ -197,12 +197,9 @@ export function drawTerrain(ctx, camera, canvasWidth, canvasHeight, terrain, ter
 
     if (!proj) continue;
 
-    // Cull only if raw depth is significantly behind camera (behind near plane)
-    // proj.z is now clamped depth (>= nearPlane), proj.rawDepth is actual forward distance
-    if (proj.rawDepth < -RENDER.nearPlane * 2) continue;
-
-    // Don't cull by horizon - terrain can be above horizon (mountains, islands)
-    // Only cull if too small
+    // Don't cull by rawDepth - terrain below camera has negative fz but should still draw
+    // (projection uses max(fz, nearPlane) for perspective depth)
+    // Only cull if too small on screen
     const size = poly.size * proj.scale;
     if (size < 0.5) continue;
 
@@ -222,8 +219,8 @@ export function drawTerrain(ctx, camera, canvasWidth, canvasHeight, terrain, ter
     ctx.fillStyle = fogColour;
     ctx.beginPath();
 
-    // Draw as quad (4 corners)
-    const half = size / 2;
+    // Draw as quad (4 corners) - half must be WORLD size, not screen size
+    const half = poly.size / 2;
     const corners = [
       { x: poly.x - half, y: poly.y - half, z: poly.height00 },
       { x: poly.x + half, y: poly.y - half, z: poly.height10 },

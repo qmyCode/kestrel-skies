@@ -340,30 +340,34 @@ function shadeColour(hex, factor) {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
 }
 
-/** Build renderable terrain polygons (sorted by distance) */
-export function buildTerrainPolys(terrain, cameraX, cameraY, cameraAlt, maxPolys = 2000) {
+/** Build renderable terrain polygons (sorted by distance for painter's algorithm) */
+export function buildTerrainPolys(terrain, cameraX, cameraY, cameraAlt, maxPolys = 8000) {
   const { heightfield, gridSize, gridStep, worldSize } = terrain;
   const polys = [];
-  const cellSize = gridStep * 2;          // Merge 2x2 grid cells
+  const cellSize = gridStep * 2;          // 2x2 grid cells = 125m
+  const MAX_DIST = 7000;                  // Only keep terrain within this distance
 
-  for (let gz = 0; gz < gridSize - 1; gz += 2) {
-    for (let gx = 0; gx < gridSize - 1; gx += 2) {
-      const wx = (gx - gridSize / 2) * gridStep;
-      const wy = (gz - gridSize / 2) * gridStep;
+  for (let gz = 0; gz < gridSize - 2; gz += 2) {
+    for (let gx = 0; gx < gridSize - 2; gx += 2) {
+      // Poly center = center of the 2x2 cell (at gx+1, gz+1 in grid coords)
+      const wx = (gx + 1 - gridSize / 2) * gridStep;
+      const wy = (gz + 1 - gridSize / 2) * gridStep;
 
-      // Distance culling
+      // Distance culling - only keep terrain within MAX_DIST
       const dx = wx - cameraX;
       const dy = wy - cameraY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 10000) continue;
+      if (dist > MAX_DIST) continue;
 
+      // Corner heights for the 2x2 cell (corners at gx,gz; gx+2,gz; gx+2,gz+2; gx,gz+2)
       const h00 = heightfield[gz * gridSize + gx];
-      const h10 = heightfield[gz * gridSize + gx + 1];
-      const h01 = heightfield[(gz + 1) * gridSize + gx];
-      const h11 = heightfield[(gz + 1) * gridSize + gx + 1];
+      const h10 = heightfield[gz * gridSize + gx + 2];
+      const h01 = heightfield[(gz + 2) * gridSize + gx];
+      const h11 = heightfield[(gz + 2) * gridSize + gx + 2];
 
       const avgHeight = (h00 + h10 + h01 + h11) / 4;
-      const colour = terrain.colourMap[gz * gridSize + gx];
+      // Colour at cell center (gx+1, gz+1)
+      const colour = terrain.colourMap[(gz + 1) * gridSize + (gx + 1)];
 
       polys.push({
         x: wx,
@@ -380,8 +384,9 @@ export function buildTerrainPolys(terrain, cameraX, cameraY, cameraAlt, maxPolys
     }
   }
 
-  // Sort by distance (far to near for painter's algorithm)
-  polys.sort((a, b) => b.dist - a.dist);
+  // Sort by distance (NEAR to far for painter's algorithm - near drawn last/on top)
+  // Distance culling already limits count; cap is safety net for edge cases
+  polys.sort((a, b) => a.dist - b.dist);
   return polys.slice(0, maxPolys);
 }
 

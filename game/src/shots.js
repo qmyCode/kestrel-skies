@@ -66,17 +66,17 @@ function setupCover(terrain, rings, seed) {
   state.fuel = PLANE.fuelCapacity * 0.7;
   state.throttle = 0.65;
 
-  // Position: just off the coast of main island (600m out), looking INLAND toward ring 1
-  // Ring 1 is at mainIsland + (-800, -500), so it's ON the island
-  // Place plane between island center and ring1, slightly offshore
+  // Position: at island coast (1200m from center), looking INLAND toward ring 1
+  // Ring 1 is at mainIsland + (-800, -500), on the island
+  // Place plane at coast on same ray as ring, looking toward island center
   const ringAngle = Math.atan2(ring1.y - mainIsland.y, ring1.x - mainIsland.x);
-  const distFromIsland = 600; // just offshore (island radius 1200)
-  state.x = mainIsland.x - Math.cos(ringAngle) * distFromIsland;
-  state.y = mainIsland.y - Math.sin(ringAngle) * distFromIsland;
+  const coastDist = 1200; // at island edge (radius 1200)
+  state.x = mainIsland.x + Math.cos(ringAngle) * coastDist;
+  state.y = mainIsland.y + Math.sin(ringAngle) * coastDist;
   state.altitude = 160; // slightly above island peak (180m)
-  state.heading = ringAngle; // looking TOWARD island center / ring1 (FIXED: was ringAngle + PI)
+  state.heading = ringAngle + Math.PI; // looking back TOWARD island center / ring1
   state.speed = 45;
-  state.pitch = -0.1; // proper downward pitch for good horizon
+  state.pitch = -0.15; // proper downward pitch for good horizon
 
   // Settle
   for (let i = 0; i < 10; i++) {
@@ -181,14 +181,15 @@ function setupApproach(terrain, rings, seed) {
   state.gearDown = true;
   state.flaps = 1.0;
 
-  // On final approach, aligned with runway - closer for larger runway view
+  // On final approach, aligned with runway centerline - 1000m out for large runway
   state.heading = runway.heading;
-  const dist = 1200; // ~1.2km out - runway will be larger
+  const dist = 1000; // 1km out - runway will be large
+  // Runway centerline: (runway.x, runway.y) + t * (cos, sin), t negative for approach
   state.x = runway.x - Math.cos(runway.heading) * dist;
   state.y = runway.y - Math.sin(runway.heading) * dist;
-  state.altitude = 60; // ~200ft AGL
+  state.altitude = 70; // ~230ft AGL
   state.speed = 32; // Approach speed
-  state.pitch = -0.1; // proper downward pitch for good horizon view
+  state.pitch = -0.08; // 3 degree glideslope
 
   // Settle
   for (let i = 0; i < 10; i++) {
