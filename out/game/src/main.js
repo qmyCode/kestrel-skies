@@ -7,7 +7,7 @@ import { generateRings, checkRingPass, getRingProgress, resetRings } from './rin
 import { createMission, getMissionIds, getMissionConfig } from './missions.js';
 import { initInput, updateInput, getFlightInput, wasKeyPressed, getControlSchemeText } from './input.js';
 import { createCamera, CameraMode, renderFrame } from './render.js';
-import { drawArtificialHorizon, drawAltimeter, drawAirspeed, drawHeading, drawThrottleGauge, drawFuelGauge, drawGMeter, drawHUD, drawBriefing, drawMissionEnd, drawPause } from './cockpit.js';
+import { drawCockpitPanel, drawHUD, drawBriefing, drawMissionEnd, drawPause } from './cockpit.js';
 import { initAudio, unlockAudio, playWind, updateWind, playEngine, updateEngine, playRingChime, playStallWarning, playCrash, toggleMute, isMutedState, cleanupAudio } from './audio.js';
 import { renderShot, getShotNames, SHOT_SCENES } from './shots.js';
 
@@ -422,15 +422,9 @@ function drawGameplay() {
   // Render 3D world
   renderFrame(ctx, flightState, terrain, terrainPolys, rings, mission, camera, canvas.width, canvas.height, performance.now() / 1000, cameraMode);
 
-  // Cockpit instruments (cockpit mode only)
+  // Cockpit instrument panel (cockpit mode only)
   if (cameraMode === CameraMode.COCKPIT) {
-    drawArtificialHorizon(ctx, canvas.width / 2, canvas.height / 2, 180, flightState.pitch, flightState.roll);
-    drawAltimeter(ctx, 20, 20, 80, 300, flightState.altitude);
-    drawAirspeed(ctx, 20, 340, 80, 300, flightState.airspeed, PLANE.stallSpeed, PLANE.maxSpeed);
-    drawHeading(ctx, canvas.width / 2, 140, 100, flightState.heading);
-    drawThrottleGauge(ctx, canvas.width - 80, 20, 60, 300, flightState.throttle);
-    drawFuelGauge(ctx, canvas.width - 80, 340, 60, 300, flightState.fuel, PLANE.fuelCapacity);
-    drawGMeter(ctx, canvas.width - 140, canvas.height - 140, 120, 120, 1 + Math.abs(Math.tan(flightState.roll)) * 2);
+    drawCockpitPanel(ctx, flightState, canvas.width, canvas.height);
   }
 
   // HUD (always)

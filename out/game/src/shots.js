@@ -3,8 +3,8 @@
 import { createInitialState, step } from './flight.js';
 import { generateTerrain, buildTerrainPolys, getRunway, getVolcanoIsland, getMainIsland } from './terrain.js';
 import { generateRings, Ring } from './rings.js';
-import { createCamera, CameraMode, renderFrame, projectPoint } from './render.js';
-import { drawArtificialHorizon, drawAltimeter, drawAirspeed, drawHeading, drawThrottleGauge, drawFuelGauge, drawGMeter, drawHUD } from './cockpit.js';
+import { createCamera, CameraMode, renderFrame } from './render.js';
+import { drawCockpitPanel, drawHUD } from './cockpit.js';
 import { AUTOPILOT, COLOURS, PLANE, GAMEPLAY, RENDER } from './config.js';
 
 /** Shot scene definitions */
@@ -31,18 +31,20 @@ export function renderShot(canvas, shotName, seed = 1) {
 
   // Generate deterministic world
   const terrain = generateTerrain(seed);
-  const terrainPolys = buildTerrainPolys(terrain, 0, 0, 100, RENDER.maxTerrainPolys);
   const rings = generateRings('ringCircuit', terrain, seed);
 
   // Setup scene-specific state
   const { state, camera, cameraMode, missionBanner, time } = scene.setup(terrain, rings, seed);
+
+  // Build terrain polys at the ACTUAL camera position for this shot
+  const terrainPolys = buildTerrainPolys(terrain, camera.x, camera.y, camera.z, RENDER.maxTerrainPolys);
 
   // Render frame
   renderFrame(ctx, state, terrain, terrainPolys, rings, null, camera, width, height, time, cameraMode);
 
   // Draw cockpit instruments if in cockpit mode
   if (cameraMode === CameraMode.COCKPIT) {
-    drawCockpitInstruments(ctx, state, width, height);
+    drawCockpitPanel(ctx, state, width, height);
   }
 
   // Draw HUD
@@ -51,85 +53,108 @@ export function renderShot(canvas, shotName, seed = 1) {
   return true;
 }
 
-/** Setup cover shot: cockpit view, low over coast at golden hour */
+/** Setup cover shot: cockpit view, low over coast at golden hour, ring dead ahead, runway visible */
 function setupCover(terrain, rings, seed) {
-  const auto = AUTOPILOT.cover;
+  const mainIsland = getMainIsland(terrain);
+  const runway = getRunway(terrain);
+  const ring1 = rings[0];
+
+  // Start near main island coast, heading toward ring 1
   const state = createInitialState(terrain);
-  Object.assign(state, auto);
   state.cameraMode = 'cockpit';
   state.engineRunning = true;
   state.fuel = PLANE.fuelCapacity * 0.7;
-  state.throttle = auto.throttle;
+  state.throttle = 0.65;
 
-  // Simulate a few steps to settle
+  // Position: just off the coast of main island (600m out), looking INLAND toward ring 1
+  // Ring 1 is at mainIsland + (-800, -500), so it's ON the island
+  // Place plane between island center and ring1, slightly offshore
+  const ringAngle = Math.atan2(ring1.y - mainIsland.y, ring1.x - mainIsland.x);
+  const distFromIsland = 600; // just offshore (island radius 1200)
+  state.x = mainIsland.x - Math.cos(ringAngle) * distFromIsland;
+  state.y = mainIsland.y - Math.sin(ringAngle) * distFromIsland;
+  state.altitude = 160; // slightly above island peak (180m)
+  state.heading = ringAngle; // looking TOWARD island center / ring1 (FIXED: was ringAngle + PI)
+  state.speed = 45;
+  state.pitch = -0.1; // proper downward pitch for good horizon
+
+  // Settle
   for (let i = 0; i < 10; i++) {
     step(state, { pitch: 0, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 0, y: 0 });
   }
 
   const camera = createCamera(state, CameraMode.COCKPIT);
-  // Adjust camera for golden hour lighting
-  camera.timeOfDay = 0.8;
-
-  // Ring 3 of 8 dead ahead
-  const ring3 = rings[2];
-  if (ring3) {
-    // Position plane to look at ring
-    const dx = ring3.x - state.x;
-    const dy = ring3.y - state.y;
-    state.heading = Math.atan2(dy, dx);
-    state.pitch = (ring3.altitude - state.altitude) / Math.sqrt(dx*dx + dy*dy);
-  }
 
   return {
     state,
     camera,
     cameraMode: CameraMode.COCKPIT,
-    missionBanner: 'RING CIRCUIT - Ring 3 of 8',
-    time: performance.now() / 1000,
+    missionBanner: 'RING CIRCUIT - Ring 1 of 8',
+    time: 1000,
   };
 }
 
-/** Setup cockpit shot: mid-turn over islands, banked */
+/** Setup cockpit shot: mid-turn over islands, banked horizon, checkpoint arrow */
 function setupCockpit(terrain, rings, seed) {
-  const auto = AUTOPILOT.cockpit;
+  const mainIsland = getMainIsland(terrain);
+
+  // Position over main island, banked turn
   const state = createInitialState(terrain);
-  Object.assign(state, auto);
   state.cameraMode = 'cockpit';
   state.engineRunning = true;
-  state.fuel = PLANE.fuelCapacity * 0.5;
-  state.throttle = auto.throttle;
-  state.roll = auto.roll; // Banked turn
+  state.fuel = PLANE.fuelCapacity * 0.55;
+  state.throttle = 0.7;
 
+  // Over main island (green terrain)
+  state.x = mainIsland.x + 200;
+  state.y = mainIsland.y - 100;
+  state.altitude = 280;
+  state.heading = 0.5;
+  state.speed = 55;
+  state.roll = 0.55; // ~31 degree bank
+  state.pitch = -0.1; // slight downward pitch to see terrain
+
+  // Settle
   for (let i = 0; i < 10; i++) {
-    step(state, { pitch: 0, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 2, y: 1 });
+    step(state, { pitch: 0, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 1, y: 0.5 });
   }
 
   const camera = createCamera(state, CameraMode.COCKPIT);
 
-  // Checkpoint arrow (next ring)
-  const nextRing = rings.find(r => !r.passed);
-
   return {
     state,
     camera,
     cameraMode: CameraMode.COCKPIT,
-    missionBanner: 'VOLCANO MAIL RUN - Checkpoint 3 of 5',
-    time: performance.now() / 1000,
+    missionBanner: 'VOLCANO MAIL RUN - Checkpoint 2 of 5',
+    time: 2000,
   };
 }
 
-/** Setup chase shot: chase view, plane model visible */
+/** Setup chase shot: chase view, Kestrel K-7 model visible, over green terrain with village and river, ring ahead */
 function setupChase(terrain, rings, seed) {
-  const auto = AUTOPILOT.chase;
+  const mainIsland = getMainIsland(terrain);
+  const ring1 = rings[0];
+
+  // Position over main island (green terrain), looking toward ring 1
   const state = createInitialState(terrain);
-  Object.assign(state, auto);
   state.cameraMode = 'chase';
   state.engineRunning = true;
   state.fuel = PLANE.fuelCapacity * 0.8;
-  state.throttle = auto.throttle;
+  state.throttle = 0.65;
 
+  // Over main island, offset toward ring 1
+  const ringAngle = Math.atan2(ring1.y - mainIsland.y, ring1.x - mainIsland.x);
+  state.x = mainIsland.x + Math.cos(ringAngle) * 300;
+  state.y = mainIsland.y + Math.sin(ringAngle) * 300;
+  state.altitude = 220;
+  state.heading = ringAngle;
+  state.speed = 50;
+  state.pitch = -0.35; // gives chase camera pitch ~ -0.1 (looking down at plane)
+  state.roll = -0.15; // slight bank for visual interest
+
+  // Settle
   for (let i = 0; i < 10; i++) {
-    step(state, { pitch: 0, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: -1, y: 0.5 });
+    step(state, { pitch: 0, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 0, y: 0 });
   }
 
   const camera = createCamera(state, CameraMode.CHASE);
@@ -138,37 +163,36 @@ function setupChase(terrain, rings, seed) {
     state,
     camera,
     cameraMode: CameraMode.CHASE,
-    missionBanner: 'RING CIRCUIT - Ring 5 of 8',
-    time: performance.now() / 1000,
+    missionBanner: 'RING CIRCUIT - Ring 1 of 8',
+    time: 3000,
   };
 }
 
-/** Setup approach shot: cockpit, final approach to runway */
+/** Setup approach shot: cockpit view, final approach to runway, runway large and centred, low altitude */
 function setupApproach(terrain, rings, seed) {
-  const auto = AUTOPILOT.approach;
+  const runway = getRunway(terrain);
+  const mainIsland = getMainIsland(terrain);
+
   const state = createInitialState(terrain);
-  Object.assign(state, auto);
   state.cameraMode = 'cockpit';
   state.engineRunning = true;
-  state.fuel = PLANE.fuelCapacity * 0.3;
-  state.throttle = auto.throttle;
+  state.fuel = PLANE.fuelCapacity * 0.25;
+  state.throttle = 0.35;
   state.gearDown = true;
   state.flaps = 1.0;
 
-  const runway = terrain.runway;
-  if (runway) {
-    // Align with runway
-    state.heading = runway.heading;
-    // Position on final approach
-    const dist = 1500;
-    state.x = runway.x - Math.cos(runway.heading) * dist;
-    state.y = runway.y - Math.sin(runway.heading) * dist;
-    state.altitude = 60; // ~200ft AGL
-    state.speed = 32; // Approach speed
-  }
+  // On final approach, aligned with runway - closer for larger runway view
+  state.heading = runway.heading;
+  const dist = 1200; // ~1.2km out - runway will be larger
+  state.x = runway.x - Math.cos(runway.heading) * dist;
+  state.y = runway.y - Math.sin(runway.heading) * dist;
+  state.altitude = 60; // ~200ft AGL
+  state.speed = 32; // Approach speed
+  state.pitch = -0.1; // proper downward pitch for good horizon view
 
+  // Settle
   for (let i = 0; i < 10; i++) {
-    step(state, { pitch: -0.1, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 0, y: 0 });
+    step(state, { pitch: -0.05, roll: 0, throttleUp: false, throttleDown: false }, 1/60, terrain, { x: 0, y: 0 });
   }
 
   const camera = createCamera(state, CameraMode.COCKPIT);
@@ -178,37 +202,8 @@ function setupApproach(terrain, rings, seed) {
     camera,
     cameraMode: CameraMode.COCKPIT,
     missionBanner: 'FINAL APPROACH - Runway 09',
-    time: performance.now() / 1000,
+    time: 4000,
   };
-}
-
-/** Draw cockpit instruments for screenshots */
-function drawCockpitInstruments(ctx, state, width, height) {
-  const instSize = 140;
-  const margin = 20;
-  const bottomY = height - margin - instSize;
-  const topY = margin;
-
-  // Artificial Horizon (center)
-  drawArtificialHorizon(ctx, width / 2, height / 2, 180, state.pitch, state.roll);
-
-  // Altimeter (left)
-  drawAltimeter(ctx, margin, topY, 80, 300, state.altitude);
-
-  // Airspeed (left, below altimeter)
-  drawAirspeed(ctx, margin, topY + 320, 80, 300, state.airspeed, PLANE.stallSpeed, PLANE.maxSpeed);
-
-  // Heading (top center)
-  drawHeading(ctx, width / 2, topY + 120, 100, state.heading);
-
-  // Throttle (right)
-  drawThrottleGauge(ctx, width - margin - 60, topY, 60, 300, state.throttle);
-
-  // Fuel (right, below throttle)
-  drawFuelGauge(ctx, width - margin - 60, topY + 320, 60, 300, state.fuel, PLANE.fuelCapacity);
-
-  // G-meter (bottom right)
-  drawGMeter(ctx, width - margin - 120, bottomY, 120, 120, 1 + Math.abs(Math.tan(state.roll)) * 2);
 }
 
 /** Draw HUD for screenshot */
